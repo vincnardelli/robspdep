@@ -1,7 +1,7 @@
-#' Permutation test for Moran-Huber's I statistic
+#' Permutation test for APLE statistic
 #'
 #'
-#'  A permutation test for Moran's I statistic calculated by using nsim random
+#'  A permutation test for APLE statistic calculated by using nsim random
 #'  permutations of x for the given spatial weighting scheme generated with spdep,
 #'  to establish the rank of the observed statistic in relation to the nsim simulated values.
 #'
@@ -14,40 +14,42 @@
 #' @export
 #' @import boot
 #' @importFrom stats mad median punif
+#' @importFrom spdep lag.listw listw2mat
 #'
 #' @examples
-#' moranhuber(sampledata$x,sampledata$w)
+#' aple(sampledata$x,sampledata$w)
 
 
-moranhuber <- function(x, listw, alternative = "greater", nsim=999){
+aple <- function(x, listw, alternative = "greater", nsim=999){
 
-  moranhuber_boot <- function(x, i, x_lag, listw, nsim=nsim, ...) {
+  aple_boot <- function(x, i, x_lag, listw, nsim=nsim, ...) {
     x <- x[i]
-    a<-1/mad(x)
-    x_lag<- med.lag.listw(listw=listw,x=x)
-    b<-1/mad(x_lag)
-    madsum <- mad(a*x+b*x_lag)^2
-    maddif <- mad(a*x-b*x_lag)^2
-    num<-madsum-maddif
-    den<-madsum+maddif
-    return(num/den)
+    xx <- mean(x)
+    z <- x - xx
+    x_lag <- spdep::lag.listw(listw, z)
+    num <- t(x_lag)%*%z + t(z)%*%x_lag
+    den <- t(x_lag)%*%x_lag+trW2*t(z)%*%z/n
+    return(num/den/2)
   }
 
 
-  x_lag<-med.lag.listw(listw=listw,x=x)
+  n <- length(listw$neighbours)
+  xx <- mean(x)
+  z <- x - xx
+  x_lag <- spdep::lag.listw(listw, z)
+  mat <- spdep::listw2mat(listw)
+  trW2 <- sum(diag(mat %*% mat))
 
-  res3 <- boot::boot(x, statistic = moranhuber_boot,
-               R = nsim,
-               sim = "permutation",
-               listw = listw,
-               x_lag=x_lag)
+  res3 <- boot::boot(x, statistic = aple_boot,
+                     R = nsim,
+                     sim = "permutation",
+                     listw = listw,
+                     n=n,
+                     trW2=trW2)
 
-
-  a<-1/mad(x)
-  b<-1/mad(x_lag)
-  num<-(mad(a*x+b*x_lag)^2)-(mad(a*x-b*x_lag)^2)
-  den<-(mad(a*x+b*x_lag)^2)+(mad(a*x-b*x_lag)^2)
-  true <- num/den
+  num <- t(x_lag)%*%z + t(z)%*%x_lag
+  den <- t(x_lag)%*%x_lag+trW2*t(z)%*%z/n
+  true <- num/den/2
   true
 
   res <- res3$t
@@ -66,9 +68,9 @@ moranhuber <- function(x, listw, alternative = "greater", nsim=999){
   pval
 
   ret <- list(statistic = statistic,
-       p.value = pval,
-       res = res)
-  class(ret) <- "robspdep.moranhuber"
+              p.value = pval,
+              res = res)
+  class(ret) <- "robspdep.aple"
 
   return(ret)
 }
